@@ -14,6 +14,10 @@ import (
 
 type SystemPromptGenerator func(state any) string
 
+type AgentContextValue string
+
+const AgentContextStateKey = AgentContextValue("state")
+
 func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools ...fantasy.AgentTool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -53,8 +57,8 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 			fantasy.WithTools(aguiTools...),
 		)
 
-		currentStep := ""
 		messageIDs := make(map[string]string)
+		state := input.State
 
 		streamCall := fantasy.AgentStreamCall{
 			Prompt: prompt,
@@ -62,23 +66,6 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 			StopWhen: stopConditons,
 
 			Messages: messages,
-
-			OnStepStart: func(stepNumber int) error {
-				currentStep = fmt.Sprintf("step_%d", stepNumber)
-				if err := streamWriter.WriteEvent(r.Context(), events.NewStepStartedEvent(currentStep)); err != nil {
-					log.Printf("error writing step started event: %v", err)
-					return err
-				}
-				return nil
-			},
-
-			OnStepFinish: func(_ fantasy.StepResult) error {
-				if err := streamWriter.WriteEvent(r.Context(), events.NewStepFinishedEvent(currentStep)); err != nil {
-					log.Printf("error writing step finished event: %v", err)
-					return err
-				}
-				return nil
-			},
 
 			OnTextStart: func(id string) error {
 				messageIDs[id] = events.GenerateMessageID()
@@ -148,6 +135,14 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 					if metadata["aguitool"] == true {
 						return nil
 					}
+					// if the tool suggested an update to the state, send it to the browser
+					if metadata["stateUpdate"] != nil {
+						state = metadata["stateUpdate"]
+						stateEvent := events.NewStateSnapshotEvent(state)
+						if err := streamWriter.WriteEvent(r.Context(), stateEvent); err != nil {
+							log.Printf("error writing state snapshot event: %v", err)
+						}
+					}
 				}
 
 				var content string
@@ -210,7 +205,13 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 			},
 		}
 
-		if _, err := agent.Stream(r.Context(), streamCall); err != nil {
+		var agentContext context.Context
+		if state != nil {
+			agentContext = context.WithValue(r.Context(), AgentContextStateKey, state)
+		} else {
+			agentContext = r.Context()
+		}
+		if _, err := agent.Stream(agentContext, streamCall); err != nil {
 			log.Printf("error streaming agent: %v", err)
 			return
 		}
