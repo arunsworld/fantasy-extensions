@@ -10,3 +10,9 @@ Extend capabilities of the [Fantasy agent framework](https://github.com/charmbra
     // use tools within agent
     fantasy.NewAgent(model, fantasy.WithTools(tools...))
 ```
+
+# AGUI Extension
+
+```
+    handler := AGUIHandler(model, systemPromptGenerator, tools...)
+```
