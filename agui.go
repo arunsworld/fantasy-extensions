@@ -42,7 +42,11 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 			return
 		}
 
-		prompt, messages := input.toMessages()
+		var prompt string
+		messages := input.toMessages()
+		if len(messages) == 0 {
+			prompt = "Hello!"
+		}
 
 		aguiTools := input.toTools()
 		stopConditons := make([]fantasy.StopCondition, 0, len(aguiTools))
@@ -228,24 +232,16 @@ type aguiAgenticInput struct {
 	ForwardedProps any              `json:"forwarded_props"`
 }
 
-func (i *aguiAgenticInput) toMessages() (string, []fantasy.Message) {
-	if len(i.Messages) == 0 {
-		return "Hello!", nil
-	}
-	var prompt string
+func (i *aguiAgenticInput) toMessages() []fantasy.Message {
 	messages := make([]fantasy.Message, 0, len(i.Messages))
-	for idx, message := range i.Messages {
+	for _, message := range i.Messages {
 		msg := aguiMessageToFantasyMessage(message)
 		if msg.Role == "" {
 			continue
 		}
-		if idx == len(i.Messages)-1 && msg.Role == fantasy.MessageRoleUser {
-			prompt = msg.Content[0].(fantasy.TextPart).Text
-		} else {
-			messages = append(messages, msg)
-		}
+		messages = append(messages, msg)
 	}
-	return prompt, messages
+	return messages
 }
 
 func (i *aguiAgenticInput) toTools() []fantasy.AgentTool {
