@@ -1,7 +1,9 @@
-charm.land/fantasy v0.1.6 h1:laomMUqUaniQoLx7UOb+MLUpIGJPoNwsXvw1PbzgnB8=
-charm.land/fantasy v0.1.6/go.mod h1:JpFcJ5zs/1CjmYYGAZ7GaFmeBv0mPaTzEPRG6Eic5pc=
+charm.land/fantasy v0.2.0 h1:BO1eMugePqrXe46zlNQZI6ajzqt/kft0IMiIAYBqsAo=
+charm.land/fantasy v0.2.0/go.mod h1:JpFcJ5zs/1CjmYYGAZ7GaFmeBv0mPaTzEPRG6Eic5pc=
 github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20251107170425-143b497532ac h1:BodVkjYenUeUYNUL/hXJxYmraer5EZ3BARTvnMgy4yY=
 github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20251107170425-143b497532ac/go.mod h1:ERAMOexUee4AIuoxksuuGoEcHl3aqLwaazjGwlR9ZCI=
+github.com/charmbracelet/x/exp/slice v0.0.0-20250904123553-b4e2667e5ad5 h1:DTSZxdV9qQagD4iGcAt9RgaRBZtJl01bfKgdLzUzUPI=
+github.com/charmbracelet/x/exp/slice v0.0.0-20250904123553-b4e2667e5ad5/go.mod h1:vI5nDVMWi6veaYH+0Fmvpbe/+cv/iJfMntdh+N0+Tms=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

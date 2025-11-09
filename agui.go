@@ -18,7 +18,19 @@ type AgentContextValue string
 
 const AgentContextStateKey = AgentContextValue("state")
 
-func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools ...fantasy.AgentTool) http.HandlerFunc {
+type AGUIHandlerOptions struct {
+	EmitReasoningEventsAs EmitReasoningAsEventType
+	ProviderOptions       fantasy.ProviderOptions
+}
+
+type EmitReasoningAsEventType uint8
+
+const (
+	EmitReasoningAsThinkingEvents EmitReasoningAsEventType = iota
+	EmitReasoningAsTextEvents
+)
+
+func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools []fantasy.AgentTool, options AGUIHandlerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var input aguiAgenticInput
@@ -62,6 +74,7 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 		)
 
 		messageIDs := make(map[string]string)
+		reasoningIDs := make(map[string]string)
 		state := input.State
 
 		streamCall := fantasy.AgentStreamCall{
@@ -70,6 +83,79 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 			StopWhen: stopConditons,
 
 			Messages: messages,
+
+			ProviderOptions: options.ProviderOptions,
+
+			OnReasoningStart: func(id string, reasoning fantasy.ReasoningContent) error {
+				switch options.EmitReasoningEventsAs {
+				case EmitReasoningAsThinkingEvents:
+					e := events.NewThinkingStartEvent()
+					if err := streamWriter.WriteEvent(r.Context(), e); err != nil {
+						log.Printf("error writing reasoning start event: %v", err)
+						return err
+					}
+					e2 := events.NewThinkingTextMessageStartEvent()
+					if err := streamWriter.WriteEvent(r.Context(), e2); err != nil {
+						log.Printf("error writing reasoning text message start event: %v", err)
+						return err
+					}
+				case EmitReasoningAsTextEvents:
+					reasoningIDs[id] = events.GenerateMessageID()
+					e := events.NewTextMessageStartEvent(reasoningIDs[id], events.WithRole("assistant"))
+					if err := streamWriter.WriteEvent(r.Context(), e); err != nil {
+						log.Printf("error writing reasoning text started event: %v", err)
+						return err
+					}
+					e2 := events.NewTextMessageContentEvent(reasoningIDs[id], "Reasoning: ")
+					if err := streamWriter.WriteEvent(r.Context(), e2); err != nil {
+						log.Printf("error writing reasoning text delta event: %v", err)
+						return err
+					}
+				}
+				return nil
+			},
+
+			OnReasoningDelta: func(id, text string) error {
+				switch options.EmitReasoningEventsAs {
+				case EmitReasoningAsThinkingEvents:
+					e := events.NewThinkingTextMessageContentEvent(text)
+					if err := streamWriter.WriteEvent(r.Context(), e); err != nil {
+						log.Printf("error writing reasoning delta event: %v", err)
+						return err
+					}
+				case EmitReasoningAsTextEvents:
+					e := events.NewTextMessageContentEvent(reasoningIDs[id], text)
+					if err := streamWriter.WriteEvent(r.Context(), e); err != nil {
+						log.Printf("error writing reasoning text delta event: %v", err)
+						return err
+					}
+				}
+				return nil
+			},
+
+			OnReasoningEnd: func(id string, reasoning fantasy.ReasoningContent) error {
+				switch options.EmitReasoningEventsAs {
+				case EmitReasoningAsThinkingEvents:
+					e := events.NewThinkingEndEvent()
+					if err := streamWriter.WriteEvent(r.Context(), e); err != nil {
+						log.Printf("error writing reasoning end event: %v", err)
+						return err
+					}
+					e2 := events.NewThinkingTextMessageEndEvent()
+					if err := streamWriter.WriteEvent(r.Context(), e2); err != nil {
+						log.Printf("error writing reasoning text message end event: %v", err)
+						return err
+					}
+				case EmitReasoningAsTextEvents:
+					e := events.NewTextMessageEndEvent(reasoningIDs[id])
+					if err := streamWriter.WriteEvent(r.Context(), e); err != nil {
+						log.Printf("error writing reasoning text ended event: %v", err)
+						return err
+					}
+					delete(reasoningIDs, id)
+				}
+				return nil
+			},
 
 			OnTextStart: func(id string) error {
 				messageIDs[id] = events.GenerateMessageID()
@@ -96,6 +182,7 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 					log.Printf("error writing text ended event: %v", err)
 					return err
 				}
+				delete(messageIDs, id)
 				return nil
 			},
 
@@ -208,6 +295,14 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools .
 				}
 			},
 		}
+
+		// if options.ReasoningEffort != nil {
+		// 	streamCall.ProviderOptions = fantasy.ProviderOptions{
+		// 		openaicompat.Name: &openaicompat.ProviderOptions{
+		// 			ReasoningEffort: options.ReasoningEffort,
+		// 		},
+		// 	}
+		// }
 
 		var agentContext context.Context
 		if state != nil {
