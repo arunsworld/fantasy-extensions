@@ -12,7 +12,9 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 )
 
-type SystemPromptGenerator func(state any) string
+type SystemPromptGenerator func(context.Context) string
+
+type ToolFetcher func(context.Context) []fantasy.AgentTool
 
 type AgentContextValue string
 
@@ -30,7 +32,7 @@ const (
 	EmitReasoningAsTextEvents
 )
 
-func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools []fantasy.AgentTool, options AGUIHandlerOptions) http.HandlerFunc {
+func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, toolFetcher ToolFetcher, options AGUIHandlerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var input aguiAgenticInput
@@ -46,16 +48,17 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools [
 		if runID == "" {
 			runID = events.GenerateRunID()
 		}
+		state := input.State
+		messages := input.toMessages()
 
-		streamWriter := newStreamWriter(w)
-		if err := streamWriter.WriteEvent(r.Context(), events.NewRunStartedEvent(threadID, runID)); err != nil {
-			log.Printf("error writing run started event: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		var agentContext context.Context
+		if state != nil {
+			agentContext = context.WithValue(r.Context(), AgentContextStateKey, state)
+		} else {
+			agentContext = r.Context()
 		}
 
 		var prompt string
-		messages := input.toMessages()
 		if len(messages) == 0 {
 			prompt = "Hello!"
 		}
@@ -66,16 +69,27 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools [
 			stopConditons = append(stopConditons, fantasy.HasToolCall(tool.Info().Name))
 		}
 
+		var tools []fantasy.AgentTool
+		if toolFetcher != nil {
+			tools = toolFetcher(agentContext)
+		}
+
 		agent := fantasy.NewAgent(
 			model,
-			fantasy.WithSystemPrompt(spg(input.State)),
-			fantasy.WithTools(tools...),
+			fantasy.WithSystemPrompt(spg(agentContext)),
 			fantasy.WithTools(aguiTools...),
+			fantasy.WithTools(tools...),
 		)
 
 		messageIDs := make(map[string]string)
 		reasoningIDs := make(map[string]string)
-		state := input.State
+
+		streamWriter := newStreamWriter(w)
+		if err := streamWriter.WriteEvent(r.Context(), events.NewRunStartedEvent(threadID, runID)); err != nil {
+			log.Printf("error writing run started event: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		streamCall := fantasy.AgentStreamCall{
 			Prompt: prompt,
@@ -304,12 +318,6 @@ func AGUIHandler(model fantasy.LanguageModel, spg SystemPromptGenerator, tools [
 		// 	}
 		// }
 
-		var agentContext context.Context
-		if state != nil {
-			agentContext = context.WithValue(r.Context(), AgentContextStateKey, state)
-		} else {
-			agentContext = r.Context()
-		}
 		if _, err := agent.Stream(agentContext, streamCall); err != nil {
 			log.Printf("error streaming agent: %v", err)
 			return
